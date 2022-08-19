@@ -1,7 +1,7 @@
 
 ---use-luvit
 
-local FILE = 'analyze/BP_Flag_Camp_RTC.uasset'
+local FILE = 'analyze/BP_Default_AbilitiesDatabase.uasset'
 
 
 local fs = require 'fs'
@@ -214,6 +214,7 @@ for i = 0, head.importCount-1 do
 end
 
 local exports = {}
+local exportHeaders = {}
 
 print()
 print("----- EXPORTS -----")
@@ -226,6 +227,7 @@ for i = 0, head.exportCount-1 do
         export.outer
     )
 
+    exportHeaders[i] = export
     exports[i] = export.objectName
     print(("%03d\t%s\t%s - @%s #%s"):format(
         i,
@@ -343,6 +345,7 @@ local function convertToDom(tb)
             __flatten = flat
         }
     else
+        if type(tb) == 'cdata' then tb = tonumber(tb) end
         return {
             type = 'text',
             name = '#text',
@@ -351,15 +354,19 @@ local function convertToDom(tb)
     end
 end
 
-do return end
+--do return end
 
-local Readers = require 'readers'
 
 ---@type ByteBuffer
 local uexp = ByteBuffer.from(assert(fs.readFileSync(FILE:gsub("%.uasset", "%.uexp"))))
-uexp:seek(0x06d1)
 
-local t = Readers.new(names, imports, exports):beginRead(uexp, "Default__?")
+--local Readers = require 'readers'
+--local t = Readers.new(names, imports, exports):beginRead(uexp, "Default__?")
+
+local baseread = require 'baseread'
+
+local t = baseread.parseExports(uexp, names, imports, exports, exportHeaders, buf.length)
+
 
 local dom = {
     type = 'document',
@@ -371,6 +378,7 @@ local dom = {
 
 
 local xml = require'slaxdom'
-fs.writeFileSync("domtest.xml", xml:xml(dom, {indent = 4}))
+fs.writeFileSync(FILE:gsub("%.uasset", "%.uexp")..".xml", xml:xml(dom, {indent = 4}))
 
 
+p("Aa")

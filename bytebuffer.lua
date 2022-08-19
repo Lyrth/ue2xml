@@ -271,7 +271,7 @@ BEfn.read_i64 = LEfn.read_i64
 
 local ffistr = ffi.string
 function ByteBuffer:read_bytes(len)
-    assert(type(len) == 'number' and len >= 0, "len must be a positive integer.")
+    assert((type(len) == 'number' or type(len) == 'cdata') and len >= 0, "len must be a positive integer.")
 
     return ffistr(self.ct + self:advance(len), len)
 end
