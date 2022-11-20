@@ -8,10 +8,15 @@ local parsers = {}
 
 local function FName(buf)
     local strlen = buf:read_i32()
-    if strlen < 0 then error('TODO UTF16 at '..bit.tohex(buf.pos, 8)) end
+    local utf16 = false
+    if strlen < 0 then
+        print('TODO UTF16 at '..bit.tohex(buf.pos, 8))  -- TODO FIX
+        strlen = -strlen * 2
+        utf16 = true
+    end
     local str = buf:read_bytes(strlen)
-    if str:match('%z$') then
-        str = str:sub(1, -2)
+    if str:match(utf16 and '%z%z$' or '%z$') then
+        str = str:sub(1, utf16 and -3 or -2)
     end
     return str
 end
