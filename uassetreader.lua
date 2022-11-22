@@ -1,5 +1,6 @@
 
 local bit = require 'bit'
+local utf = require 'utf'
 local strcrc = require './strcrc'
 
 local tohex, band = bit.tohex, bit.band
@@ -10,9 +11,16 @@ local concat = table.concat
 
 ---@param buf ByteBuffer
 local function readString(buf)
-    local len = buf:read_i32()
-    -- TODO: utf16 support: wctomb
-    return buf:read_bytes(len):gsub('%z$','')
+    local strlen = buf:read_i32()
+    local str
+    if strlen >= 0 then
+        str = buf:read_bytes(strlen)
+    else
+        str = utf.utf16ToUtf8(buf:read_bytes(-strlen * 2))
+    end
+
+    if str:byte(-1) == 0 then str = str:sub(1, -2) end
+    return str
 end
 
 ---@param buf ByteBuffer

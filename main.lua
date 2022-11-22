@@ -64,3 +64,4 @@ local exportData = baseread.parseExports(uexp, head.names, head.importNames, hea
 
 fs.writeFileSync(FILE:gsub("%.uasset", "%.uexp")..".xml", objectutil.convertToXml(exportData))
 
+print("Done.")
