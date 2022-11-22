@@ -14,8 +14,8 @@ local base = {}
 
 
 ---@class Parser
----@field readProperty fun(buf: ByteBuffer, base: ParserBase, expectedLength: integer)
----@field readValue fun(buf: ByteBuffer, base: ParserBase)
+---@field readProperty fun(buf: ByteBuffer, base: ParserBase, expectedLength: integer): table
+---@field readValue fun(buf: ByteBuffer, base: ParserBase): any
 
 ---@type table<string, Parser>
 local parsers = {}
@@ -77,26 +77,32 @@ function base:parseExport(exportInfo)
         if class == 'DataTable' then
             -- process datatable
             -- TODO
-            local object = self.newOrderedTable('ExportData')
+            local object = self.newOrderedTable('Data')
             object._type = 'DataTable'
 
             assert(self.buf:read_u32() == 0)
             local count = self.buf:read_u32()
 
-            for i = 1, count do
+            for j = 1, count do
                 local name = self.names[tonumber(self.buf:read_u32())]; self.buf:read_u32()
                 local item = self.parsers.StructProperty.readValue(self.buf, self)
                 item.__flatten = false
                 item.__type = 'TableItem'
                 item._name = name
 
-                object[i] = item
+                object[j] = item
             end
 
             out[i] = object
         else
+            print(("Extra data found for class '%s' of length %s at %s"):format(
+                class,
+                bit.tohex(remaining, 8),
+                bit.tohex(self.buf.pos, 8)
+            ))
             -- process raw
             out[i] = self:readRaw(remaining)
+            out[i]._class = class
         end
     end
 
@@ -127,7 +133,7 @@ function base:readRaw(len)
         bytes[i] = bit.tohex(raw:sub(i,i):byte(), 2)
     end
 
-    local extra = self.newOrderedTable('ExportData', table.concat(bytes, ' '))
+    local extra = self.newOrderedTable('Data', table.concat(bytes, ' '))
     extra._type = 'Raw'
     return extra
 end

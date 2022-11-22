@@ -50,9 +50,7 @@ parsers.ByteProperty.readProperty = function(buf, base, len)
     return out
 end
 parsers.ByteProperty.readValue = function(buf, base)
-    local out = parsers.EnumProperty.readValue(buf, base)
-    out.__type = 'Byte'
-    return out
+    return parsers.EnumProperty.readValue(buf, base)
 end
 
 parsers.ObjectProperty = {}
