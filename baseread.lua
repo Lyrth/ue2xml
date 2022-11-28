@@ -1,5 +1,6 @@
 
 local bit = require 'bit'
+local fs = require 'fs'
 
 local objectutil = require './objectutil'
 
@@ -50,6 +51,103 @@ function base.parseExports(buf, names, importNames, exportNames, exports, expOff
 
     return exportObjects
 end
+
+
+local debugTagsFormat = [[
+<?xml version="1.0" encoding="UTF-8"?>
+<wxHexEditor_XML_TAG>
+  <filename path="%s">
+%s
+  </filename>
+</wxHexEditor_XML_TAG>
+]]
+
+local debugEntryFormat = [[
+    <TAG id="%d">
+      <start_offset>%d</start_offset>
+      <end_offset>%d</end_offset>
+      <tag_text>%s</tag_text>
+      <font_colour>#%s</font_colour>
+      <note_colour>#%s</note_colour>
+    </TAG>
+]]
+
+---@param buf ByteBuffer
+---@param names string[]
+---@param importNames string[]
+---@param exportNames string[]
+---@param exports table
+---@param expOffset integer
+function base.parseExportsDebug(buf, names, importNames, exportNames, exports, expOffset, debugUexpPath)
+    assert(type(debugUexpPath) == 'string', "Please specify debugUexpPath for the debug variant")
+    local self = setmetatable({}, {__index = base})
+    self.buf = buf
+    self.names = names
+    self.imports = importNames
+    self.exports = exportNames
+    self.expOffset = expOffset  -- uasset size
+
+    local tags = {}
+    self.readField = function(self)
+        local start = tonumber(self.buf.pos)
+        local success, prop = pcall(base.readField, self)
+        if success and prop == nil then
+            -- none
+            tags[#tags+1] = {s = start, e = start - 1 + 8, c = 0x604080, t = "None"}
+        elseif not success and type(prop) == 'string' then
+            print(prop)
+            if prop:find("!!! Invalid name") then
+                tags[#tags+1] = {s = start, e = start - 1 + 8, c = 0xFF0000, t = "[Invalid: Name]"}
+                goto fail
+            else
+                tags[#tags+1] = {s = start, e = start - 1 + 8, c = 0x804040, t = "[Name]"}
+            end
+
+            if prop:find("!!! Unimplemented class") then
+                tags[#tags+1] = {s = start + 8, e = start - 1 + 16, c = 0xFF0000, t = "[Invalid: Class]"}
+                goto fail
+            else
+                tags[#tags+1] = {s = start + 8, e = start - 1 + 16, c = 0x804040, t = "[Class]"}
+            end
+
+            tags[#tags+1] = {s = start + 16, e = start - 1 + 24, c = 0x804040, t = "[Length]"}
+            tags[#tags+1] = {s = start + 24, e = start + 24, c = 0xFF0000, t = "[Error: '" .. prop .. "']"}
+
+            ::fail::
+        elseif success and type(prop) == 'table' then
+            -- parse success
+            tags[#tags+1] = {s = start, e = start - 1 + 8, c = 0x404040, t = "Name: "..prop._name}
+            tags[#tags+1] = {s = start + 8, e = start - 1 + 16, c = 0x404040, t = "Class: "..prop.__type}
+            tags[#tags+1] = {s = start + 16, e = start - 1 + 24, c = 0x404040, t = "[Length]"}
+            -- t[#t+1] = {s = start + 24, e = self.buf.pos - 1, c = 0x404040, t = "[Data]"}
+        end
+
+        if not success then error(prop) end
+        return prop
+    end
+
+    local exportObjects = base.newOrderedTable('uexp')
+    for i = 0, #exports do
+        local success, parsed = pcall(self.parseExport, self, exports[i])
+        if success then
+            exportObjects[i+1] = parsed
+        else
+            exportObjects[i+1] = self.newOrderedTable('DEBUG', {"!!! Errored part here !!!"})
+        end
+    end
+
+    local tagsStr = {}
+    for i = 1, #tags do
+        local tag = tags[i]
+        tagsStr[i] = debugEntryFormat:format(i-1, tag.s, tag.e, tag.t, '000000', bit.tohex(tag.c, 6))
+    end
+
+    local xml = debugTagsFormat:format(debugUexpPath, table.concat(tagsStr))
+    fs.writeFileSync(debugUexpPath..'.tags', xml)
+
+    return exportObjects
+end
+
 
 
 function base:parseExport(exportInfo)
@@ -111,7 +209,7 @@ end
 
 function base:readField()
     local name = self.names[tonumber(self.buf:read_u32())]; self.buf:read_u32()
-    if name == nil then error("Invalid name at "..bit.tohex(self.buf.pos - 8)) end
+    if name == nil then error("!!! Invalid name at "..bit.tohex(self.buf.pos - 8)) end
     if name == 'None' then return nil end
 
     local class = self.names[tonumber(self.buf:read_u32())]; self.buf:read_u32()
@@ -124,7 +222,7 @@ function base:readField()
     return prop
 end
 
-function base:readFields() return base.readField, self end
+function base:readFields() return self.readField, self end
 
 function base:readRaw(len)
     local raw = self.buf:read_bytes(len)
@@ -168,7 +266,7 @@ end
 
 function base:checkClass(class, name)
     if type(self.parsers[class]) ~= 'table' then
-        print(("!!! Unimplemented, %s%s at %s"):format(
+        print(("!!! Unimplemented class, %s%s at %s"):format(
             (class or "unknown class"),
             (name and (" with name '"..name.."'") or ""),
             bit.tohex(self.buf.pos - 8)
