@@ -50,7 +50,9 @@ parsers.ByteProperty.readProperty = function(buf, base, len)
     return out
 end
 parsers.ByteProperty.readValue = function(buf, base)
-    return parsers.EnumProperty.readValue(buf, base)
+    -- return parsers.EnumProperty.readValue(buf, base)
+    -- weird asf
+    return tonumber(buf:read_u8())
 end
 
 parsers.ObjectProperty = {}
