@@ -11,6 +11,7 @@ local objectutil = require './objectutil'
 ---@field imports table
 ---@field exports table
 ---@field expOffset integer
+---@field debug boolean
 local base = {}
 
 
@@ -22,7 +23,7 @@ local base = {}
 local parsers = {}
 base.parsers = parsers
 
-for _, v in ipairs { "primitive", "object", "container" } do
+for _, v in ipairs { "primitive", "object", "container", "plugindefs" } do
     local c = require("parsers/"..v)
     for name, parser in pairs(c) do
         parsers[name] = parser
@@ -86,6 +87,7 @@ function base.parseExportsDebug(buf, names, importNames, exportNames, exports, e
     self.imports = importNames
     self.exports = exportNames
     self.expOffset = expOffset  -- uasset size
+    self.debug = true
 
     local tags = {}
     self.readField = function(self)
@@ -132,7 +134,7 @@ function base.parseExportsDebug(buf, names, importNames, exportNames, exports, e
         if success then
             exportObjects[i+1] = parsed
         else
-            exportObjects[i+1] = self.newOrderedTable('DEBUG', {"!!! Errored part here !!!"})
+            exportObjects[i+1] = self.newOrderedTable('_DEBUG', "!!! Errored part here !!!\n"..parsed.."\n"..debug.traceback())
         end
     end
 
@@ -193,11 +195,11 @@ function base:parseExport(exportInfo)
 
             out[i] = object
         else
-            print(("Extra data found for class '%s' of length %s at %s"):format(
-                class,
-                bit.tohex(remaining, 8),
-                bit.tohex(self.buf.pos, 8)
-            ))
+            -- print(("Extra data found for class '%s' of length %s at %s"):format(
+            --     class,
+            --     bit.tohex(remaining, 8),
+            --     bit.tohex(self.buf.pos, 8)
+            -- ))
             -- process raw
             out[i] = self:readRaw(remaining)
             out[i]._class = class
@@ -208,6 +210,8 @@ function base:parseExport(exportInfo)
 end
 
 function base:readField()
+    local start = self.buf.pos
+
     local name = self.names[tonumber(self.buf:read_u32())]; self.buf:read_u32()
     if name == nil then error("!!! Invalid name at "..bit.tohex(self.buf.pos - 8)) end
     if name == 'None' then return nil end
@@ -218,6 +222,10 @@ function base:readField()
     local len = self.buf:read_u32(); self.buf:read_u32()
     local prop = self.parsers[class].readProperty(self.buf, self, len)
     prop._name = name
+
+    if self.debug then
+        prop._location = bit.tohex(start, 8)
+    end
 
     return prop
 end
@@ -239,11 +247,19 @@ end
 
 function base:ensureLength(len, fn, ...)
     local startOffset = self.buf.pos
-    local result = fn(...)
+    local success, result = pcall(fn, ...)
     local endOffset = self.buf.pos
 
-    if endOffset - startOffset < len then
-        print("Warning: extra data at "..endOffset)
+    if not success then
+        print("Warning, defaulting to raw: "..result)
+        print(debug.traceback())
+
+        self.buf:seek(startOffset)
+        local raw = self:readRaw(len)
+        raw._errorMsg = result
+        return raw
+    elseif endOffset - startOffset < len then
+        print("Warning: extra data at "..tonumber(endOffset))
         local extra = self:readRaw(len - (endOffset - startOffset))
         if type(result) == 'table' then
             local endIndex = 1
@@ -271,6 +287,7 @@ function base:checkClass(class, name)
             (name and (" with name '"..name.."'") or ""),
             bit.tohex(self.buf.pos - 8)
         ))
+        print(debug.traceback())
         class = 'raw'
     end
     return class

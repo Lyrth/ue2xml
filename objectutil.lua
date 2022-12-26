@@ -1,4 +1,7 @@
 
+local bit = require 'bit'
+local ffi = require 'ffi'
+
 local xml = require './slaxdom'
 
 local rawget, ipairs, tremove = rawget, ipairs, table.remove
@@ -43,7 +46,7 @@ local function newOrderedTable()
 end
 
 
-local type, tinsert, tostring, tonumber, pairs = type, table.insert, tostring, tonumber, pairs
+local type, tinsert, tostring, tonumber, pairs, ffi_sizeof, bit_tohex = type, table.insert, tostring, tonumber, pairs, ffi.sizeof, bit.tohex
 local HUGE = math.huge
 
 local function convertToDom(tb)
@@ -96,7 +99,13 @@ local function convertToDom(tb)
             __flatten = flat
         }
     else
-        if type(tb) == 'cdata' then tb = tonumber(tb) end
+        if type(tb) == 'cdata' then
+            if ffi_sizeof(tb) > 4 then
+                tb = '0x'..bit_tohex(tb, 16)
+            else
+                tb = tonumber(tb)
+            end
+        end
         return {
             type = 'text',
             name = '#text',

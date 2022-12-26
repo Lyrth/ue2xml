@@ -56,7 +56,6 @@ local function readHeader(buf)
     do
         local arrLen = buf:read_u32()
         for i = 1, arrLen do
-            p('a')
             t.customVersions[i] = readCustomVersion(buf)
         end
     end

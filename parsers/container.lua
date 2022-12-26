@@ -12,16 +12,22 @@ local function ResolveAsItem(base, buf, subclass, totalLen)
         local name = base.names[tonumber(buf:read_u64())]
         local class = base.names[tonumber(buf:read_u64())]
         assert(class == subclass)
-        local thislen = buf:read_u32(); buf:read_u32()  -- 0x35
-        assert(thislen == totalLen - 0x35)              -- 4b num, 8b name, 8b class, 8b thislen, 8b structclass, 1b 0, 16b 0
+        local thisLen = buf:read_u32(); buf:read_u32()  -- 0x35
+        assert(thisLen == totalLen - 0x35)              -- 4b num, 8b name, 8b class, 8b thislen, 8b structclass, 1b 0, 16b 0
         local structType = base.names[tonumber(buf:read_u64())]
         assert(buf:read_u8() == 0)
         assert(buf:read_u64() == 0)
         assert(buf:read_u64() == 0)
-        return subclass, 'Struct:'..structType
+
+        return 'StructProperty', 'Struct:'..structType, knownStructs[structType] and thisLen
     end
     return subclass, subclass
 end
+
+parsers.StructPropertyKnown = {}
+-- TODO: for all of those structs
+---@diagnostic disable-next-line: redundant-parameter
+parsers.StructPropertyKnown.readValue = function(buf, base, len) return base:readRaw(len) end
 
 
 parsers.StructProperty = {}
@@ -35,8 +41,8 @@ parsers.StructProperty.readProperty = function(buf, base, len)
         local out = base.newOrderedTable('Struct')
         out._subtype = structType
         if knownStructs[structType] then
-            -- TODO: for all of those structs
-            out[1] = base:readRaw(len)
+            ---@diagnostic disable-next-line: redundant-parameter
+            out[1] = parsers.StructPropertyKnown.readValue(buf, base, len)
         else
             out[1] = parsers.StructProperty.readValue(buf, base)
         end
@@ -54,6 +60,13 @@ parsers.StructProperty.readValue = function(buf, base)
         i = i + 1
     end
 
+    -- special case for niagara: extra zeroes
+    if base.hasStructExtraFrom then
+        out[i] = base.newOrderedTable('__StructExtra', tonumber(buf:read_u32()))
+        out[i]._from = base.hasStructExtraFrom
+        base.hasStructExtraFrom = nil
+    end
+
     return out
 end
 
@@ -66,13 +79,18 @@ parsers.ArrayProperty.readProperty = function(buf, base, len)
     return base:ensureLength(len, function()
         local num = buf:read_u32()
 
-        local subtype = nil
-        subclass, subtype = ResolveAsItem(base, buf, subclass, len)
+        local subtype, knownLen
+        subclass, subtype, knownLen = ResolveAsItem(base, buf, subclass, len)
 
         local out = base.newOrderedTable('Array')
         out._subtype = subtype
-        for i = 1, num do
-            out[i] = base.newOrderedTable('ArrayItem', base.parsers[subclass].readValue(buf, base))
+        if knownLen then
+            out._count = num
+            out[1] = parsers.StructPropertyKnown.readValue(buf, base, knownLen)
+        else
+            for i = 1, num do
+                out[i] = base.newOrderedTable('ArrayItem', base.parsers[subclass].readValue(buf, base))
+            end
         end
 
         return out
@@ -94,13 +112,18 @@ parsers.SetProperty.readProperty = function(buf, base, len)
         assert(buf:read_u32() == 0)
         local num = buf:read_u32()
 
-        local subtype = nil
-        subclass, subtype = ResolveAsItem(base, buf, subclass, len)
+        local subtype, knownLen
+        subclass, subtype, knownLen = ResolveAsItem(base, buf, subclass, len)
 
         local out = base.newOrderedTable('Set')
         out._subtype = subtype
-        for i = 1, num do
-            out[i] = base.newOrderedTable('SetItem', base.parsers[subclass].readValue(buf, base))
+        if knownLen then
+            out._count = num
+            out[1] = parsers.StructPropertyKnown.readValue(buf, base, knownLen)
+        else
+            for i = 1, num do
+                out[i] = base.newOrderedTable('SetItem', base.parsers[subclass].readValue(buf, base))
+            end
         end
 
         return out
@@ -164,6 +187,7 @@ parsers.MapProperty.readProperty = function(buf, base, len)
         out._keyClass = keyClass
         out._valClass = valClass
 
+        -- TODO: if not valid field then do plain data
         for i = 1, num do
             out[i] = base.newOrderedTable('MapItem',
                 base.newOrderedTable('Key', base.parsers[keyClass].readValue(buf, base)),

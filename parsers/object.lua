@@ -74,21 +74,33 @@ end
 parsers.SoftObjectProperty = {}
 parsers.SoftObjectProperty.readProperty = function(buf, base, len)
     assert(buf:read_u8() == 0)
-    return base:ensureLength(len, function()
-        local object = base.names[tonumber(buf:read_u64())]
-        local subpath = FName(buf)
+    return base:ensureLength(len, parsers.SoftObjectProperty.readValue, buf, base)
+end
+parsers.SoftObjectProperty.readValue = function(buf, base)
+    local object = base.names[tonumber(buf:read_u64())]
+    local subpath = FName(buf)
 
-        local out = base.newOrderedTable('SoftObject', object)
-        if #subpath > 0 then
-            out._subpath = subpath
-        end
+    local out = base.newOrderedTable('SoftObject', object)
+    if #subpath > 0 then
+        out._subpath = subpath
+    end
+    return out
+end
+
+parsers.InterfaceProperty = {}
+parsers.InterfaceProperty.readProperty = function(buf, base, len)
+    assert(buf:read_u8() == 0)
+    return base:ensureLength(len, function()
+        local objType, object = base:resolveIndex(buf:read_i32())
+
+        local out = base.newOrderedTable('Interface', object)
+        out._type = objType
         return out
     end)
 end
-parsers.SoftObjectProperty.readValue = function(buf, base)
-    error(("SoftObjectProperty.readValue unimplemented! at: %s"):format(
-        bit.tohex(buf.pos, 8)
-    ))
+parsers.InterfaceProperty.readValue = function(buf, base)
+    local _, object = base:resolveIndex(buf:read_i32())
+    return object
 end
 
 parsers.NameProperty = {}
@@ -118,7 +130,7 @@ parsers.TextProperty = {}
 parsers.TextProperty.readProperty = function(buf, base, len)
     assert(buf:read_u8() == 0)
     return base:ensureLength(len, function()
-        assert(buf:read_u32() == 0)
+        local flags = buf:read_u32()    -- flags??
         local empty = buf:read_i8() == -1
         local namespace = FName(buf)
 
@@ -131,6 +143,7 @@ parsers.TextProperty.readProperty = function(buf, base, len)
         local out = base.newOrderedTable('Text', str)
         out._namespace = namespace
         out._key = key
+        out._flags = flags ~= 0 and flags or nil
         return out
     end)
 end

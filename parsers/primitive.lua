@@ -32,11 +32,11 @@ do  -- converters
     local u32s, u64s = ffi.typeof 'uint32_t[1]', ffi.typeof 'uint64_t[1]'
     local fptr, dptr = ffi.typeof 'float*', ffi.typeof 'double*'
     toFloat = function(u32)
-        return tonumber(("%.4f"):format(ffi.cast(fptr, u32s(fromLE32(u32)))[0]))
+        return tonumber(("%.4f"):format(ffi.cast(fptr, u32s(fromLE32(u32)))[0] or 'nan'))
     end
 
     toDouble = function(u64)
-        return tonumber(("%.8f"):format(ffi.cast(dptr, u64s(fromLE64(u64)))[0]))
+        return tonumber(("%.8f"):format(ffi.cast(dptr, u64s(fromLE64(u64)))[0] or 'nan'))
     end
 end -- converters
 
@@ -80,9 +80,10 @@ parsers.BoolProperty.readProperty = function(buf, base, len)
     end)
 end
 parsers.BoolProperty.readValue = function(buf)
-    error(("BoolProperty.readValue should never be called! at: %s"):format(
-        bit.tohex(buf.pos, 8)
-    ))
+    -- assumption:
+    local value = tonumber(buf:read_u8())
+    assert(value == 0 or value == 1)
+    return value ~= 0
 end
 
 -- ByteProperty: literally just an EnumProperty(?) OR-able EnumProperty i guess
